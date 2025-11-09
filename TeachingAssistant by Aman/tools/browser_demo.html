@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AI Tutor — Browser Streaming Demo</title>
+  <style>
+    body { font-family: Inter, Roboto, Arial; max-width: 900px; margin: 24px auto; padding: 0 16px; color: #111; }
+    h1 { font-size: 1.25rem; margin-bottom: 8px; }
+    #log { border: 1px solid #e1e1e6; padding: 12px; min-height: 160px; white-space: pre-wrap; background:#fff; border-radius:8px; }
+    .controls { margin-top: 12px; display:flex; gap:8px; align-items:center; }
+    input[type="text"] { flex:1; padding:8px; border-radius:6px; border:1px solid #ddd; }
+    button { padding:8px 12px; border-radius:6px; border:0; background:#2563eb; color:#fff; cursor:pointer; }
+    small.note { color:#666; display:block; margin-top:8px; }
+    #partial { color:#111; font-weight:500; }
+    .meta { color:#666; font-size:0.9rem; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h1>AI Tutor — Browser Streaming Demo</h1>
+  <div id="log">Status: not connected</div>
+
+  <div class="controls">
+    <input id="prompt" type="text" placeholder="Ask: Explain gravity simply" value="Explain gravity in simple terms" />
+    <button id="start">Start Stream</button>
+    <button id="sendQuiz" disabled>Send Sample Quiz Response</button>
+  </div>
+
+  <small class="note">
+    WebSocket endpoint: <code>ws://localhost:8000/ws/ta/testsession</code><br>
+    Make sure the server is running (uvicorn) and Redis is started.
+  </small>
+
+  <div class="meta" id="metaArea"></div>
+
+<script>
+  const startBtn = document.getElementById('start');
+  const sendQuizBtn = document.getElementById('sendQuiz');
+  const log = document.getElementById('log');
+  const promptInput = document.getElementById('prompt');
+  const metaArea = document.getElementById('metaArea');
+
+  let ws = null;
+  let latestQuizAnswer = null;
+
+  function appendLine(s) {
+    log.textContent = (log.textContent === 'Status: not connected' ? '' : log.textContent + "\n") + s;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  startBtn.addEventListener('click', async () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      appendLine('[info] already connected');
+      return;
+    }
+    appendLine('[info] connecting to ws://localhost:8000/ws/ta/testsession ...');
+    ws = new WebSocket('ws://localhost:8000/ws/ta/testsession');
+
+    ws.addEventListener('open', () => {
+      appendLine('[info] socket open — sending start_stream');
+      const payload = { type:'start_stream', prompt: promptInput.value || 'Explain gravity simply' };
+      ws.send(JSON.stringify(payload));
+    });
+
+    ws.addEventListener('message', (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'partial') {
+          appendLine('[partial] ' + msg.chunk);
+        } else if (msg.type === 'done') {
+          appendLine('[done] model finished streaming');
+          sendQuizBtn.disabled = false;
+        } else if (msg.type === 'quiz_answer') {
+          latestQuizAnswer = msg.answer;
+          metaArea.textContent = 'Extracted quiz answer (hidden): ' + msg.answer;
+        } else if (msg.type === 'quiz_result') {
+          appendLine('[quiz_result] ' + JSON.stringify(msg));
+        } else {
+          appendLine('[msg] ' + JSON.stringify(msg));
+        }
+      } catch (err) {
+        appendLine('[err] could not parse: ' + ev.data);
+      }
+    });
+
+    ws.addEventListener('close', () => {
+      appendLine('[info] socket closed');
+      sendQuizBtn.disabled = true;
+    });
+
+    ws.addEventListener('error', (e) => {
+      appendLine('[error] ' + e);
+    });
+  });
+
+  sendQuizBtn.addEventListener('click', () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      appendLine('[warn] socket not open');
+      return;
+    }
+    const answer = prompt('Type quiz answer (leave empty to send the extracted answer):', '') || latestQuizAnswer || 'gravity';
+    ws.send(JSON.stringify({ type:'quiz_response', answer }));
+    appendLine('[info] sent quiz_response: ' + answer);
+  });
+</script>
+</body>
+</html>
+
