@@ -1,6 +1,3 @@
-# REVIEWER_GUIDE.md
-
-````
 # Teaching Assistant — Phase A (Steps 1–3) — Reviewer Guide
 
 This document explains how to run and verify **Testing & Evaluation Phase A (End of Step 3)** locally.
